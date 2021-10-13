@@ -1,5 +1,6 @@
 import heapq
 from collections import Counter
+from hashlib import md5
 from huffman_tree import Node
 
 
@@ -15,12 +16,13 @@ class Huffman:
 
     def compress(self, filename: str) -> None:
         self.filename = filename
-        self._get_frequency(self._read_bytes())
+        data = self._read_bytes()
+        hash_data = md5(data).hexdigest()
+        self._get_frequency(data)
         self.frequency = Counter({code: self.frequency[code] for code in range(256)})
         self._create_tree()
-        data = list(self._read_bytes())
-        compress_data = [self.codes[i] for i in data]
-        headers = self._create_headers(len(data))
+        compress_data = [self.codes[i] for i in list(data)]
+        headers = self._create_headers(len(data), hash_data)
         body = self._get_binary_body_from_string(''.join(compress_data))
         self._write_to_file(self.filename + '.huf', headers + body)
 
@@ -29,14 +31,14 @@ class Huffman:
         with open(filename, 'wb') as binary_file:
             binary_file.write(data)
 
-    def _create_headers(self, length_body: int) -> bytearray:
+    def _create_headers(self, length_body: int, hash_data: str) -> bytearray:
         len_bytes = f"{bin(length_body)[2:]:0>32}"
         length_body = bytearray(int(len_bytes[i:i + 8], 2) for i in range(0, len(len_bytes), 8))
 
         frequencies = [0] * 256
         for i in range(256):
             frequencies[i] = self.frequency[i]
-        return length_body + bytearray(frequencies)
+        return length_body + bytearray(frequencies) + bytearray(hash_data.encode('utf-8'))
 
     @staticmethod
     def _get_binary_body_from_string(binary_string: str) -> bytearray:
@@ -57,6 +59,7 @@ class Huffman:
                 length_body <<= 8
                 length_body += int(i)
             self.frequency = Counter({code: count for code, count in enumerate(f.read(256))})
+            hash_data = f.read(32).decode('utf-8')
             self._create_tree()
             decodes = {value: key for key, value in self.codes.items()}
 
@@ -72,7 +75,9 @@ class Huffman:
                     decoded_str += chr(decodes[symbol])
                     symbol = ""
                     count += 1
-
+        if hash_data != md5(decoded_str.encode('utf-8')).hexdigest():
+            print("The file is damaged")
+            return
         self._write_to_file(filename.removesuffix('.huf'), decoded_str.encode('utf-8'))
 
     def _normalize_frequencies(self) -> None:
