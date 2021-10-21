@@ -1,10 +1,10 @@
 # HuffmanCoding
 
-
-# TODO
-+ (Done) CLI-интерфейс
-+ (Done) Возможность распаковки
-+ (Done) Архивация как текстовых, так и бинарных файлов
-+ (Done) Архивация одного файла
-+ (Done) Сохранение исходного имени файла
-+ (Done) Контроль целостности
+### A program for archiving and unzipping files using the Huffman algorithm.
+```
+USAGE:
+    main.py -c, --compress   [path]
+    main.py -d, --decompress [path]
+    main.py -l, --listing    [path]
+    main.py -h, --help
+```
