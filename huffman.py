@@ -15,6 +15,21 @@ def compress_folder(folder: str) -> None:
     huffman.write_to_file(folder.removesuffix('\\') + '.huf', data)
 
 
+def get_listing(filename: str) -> list:
+    files = []
+    with open(filename, 'rb') as f:
+        while byte := f.read(1):
+            len_filename = int.from_bytes(byte, "big")
+            files.append(f.read(len_filename).decode('utf-8'))
+            f.read(4)
+            real_len = 0
+            for i in f.read(4):
+                real_len <<= 8
+                real_len += int(i)
+            f.read(256 + 32 + real_len)
+    return files
+
+
 class Huffman:
 
     __slots__ = {"filename", "frequency", "codes", "root"}
