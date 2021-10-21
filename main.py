@@ -1,6 +1,6 @@
 import os
 import sys
-from huffman import Huffman
+from huffman import Huffman, compress_folder
 
 HELP_STRING = """
 A program for archiving and unzipping files using the Huffman algorithm.
@@ -13,7 +13,7 @@ USAGE:
 
 def is_path_correct(func):
     def wrapper(path):
-        if os.path.isfile(path):
+        if os.path.exists(path):
             func(path)
         else:
             print("The path is incorrect")
@@ -22,8 +22,11 @@ def is_path_correct(func):
 
 @is_path_correct
 def compress(path: str):
-    huffman = Huffman()
-    huffman.compress(path)
+    if os.path.isfile(path):
+        huffman = Huffman()
+        huffman.compress(path)
+    else:
+        compress_folder(path)
 
 
 @is_path_correct

@@ -1,7 +1,18 @@
+import os
 import heapq
-from collections import Counter
+from io import BytesIO
 from hashlib import md5
 from huffman_tree import Node
+from collections import Counter
+
+
+def compress_folder(folder: str) -> None:
+    data = bytearray()
+    huffman = Huffman()
+    for root, dirs, files in os.walk(folder):
+        for f in files:
+            data += huffman.compress(os.path.join(root, f), False)
+    huffman.write_to_file(folder.removesuffix('\\') + '.huf', data)
 
 
 class Huffman:
@@ -14,7 +25,7 @@ class Huffman:
         self.codes = {}
         self.root = None
 
-    def compress(self, filename: str) -> None:
+    def compress(self, filename: str, write_to_file=True) -> None | bytearray:
         self.filename = filename
         data = self._read_bytes()
         hash_data = md5(data).hexdigest()
@@ -22,23 +33,32 @@ class Huffman:
         self.frequency = Counter({code: self.frequency[code] for code in range(256)})
         self._create_tree()
         compress_data = [self.codes[i] for i in list(data)]
-        headers = self._create_headers(len(data), hash_data)
         body = self._get_binary_body_from_string(''.join(compress_data))
-        self._write_to_file(self.filename + '.huf', headers + body)
+        headers = self._create_headers(len(data), len(body), hash_data)
+        if write_to_file:
+            self.write_to_file(self.filename + '.huf', headers + body)
+        else:
+            return headers + body
 
     @staticmethod
-    def _write_to_file(filename: str, data: bytearray) -> None:
+    def write_to_file(filename: str, data: bytearray) -> None:
+        folder = os.path.split(filename)[0]
+        if folder and not os.path.exists(folder):
+            os.makedirs(folder)
         with open(filename, 'wb') as binary_file:
             binary_file.write(data)
 
-    def _create_headers(self, length_body: int, hash_data: str) -> bytearray:
-        len_bytes = f"{bin(length_body)[2:]:0>32}"
-        length_body = bytearray(int(len_bytes[i:i + 8], 2) for i in range(0, len(len_bytes), 8))
+    def _create_headers(self, length_body: int, real_length: int, hash_data: str) -> bytearray:
+        byte_filename = bytearray(self.filename.encode('utf-8'))
+        len_filename = bytearray([len(byte_filename)]) + byte_filename
+
+        length_body = self._int_to_bytes(length_body)
+        real_length = self._int_to_bytes(real_length)
 
         frequencies = [0] * 256
         for i in range(256):
             frequencies[i] = self.frequency[i]
-        return length_body + bytearray(frequencies) + bytearray(hash_data.encode('utf-8'))
+        return len_filename + length_body + real_length + bytearray(frequencies) + bytearray(hash_data.encode('utf-8'))
 
     @staticmethod
     def _get_binary_body_from_string(binary_string: str) -> bytearray:
@@ -50,20 +70,39 @@ class Huffman:
 
     def decompress(self, filename: str) -> None:
         with open(filename, 'rb') as f:
+            while byte := f.read(1):
+                len_filename = int.from_bytes(byte, "big")
+                header_filename = f.read(len_filename)
+                length_body = f.read(4)
+                real_len = 0
+                for i in f.read(4):
+                    real_len <<= 8
+                    real_len += int(i)
+
+                start_bytes = bytearray([len_filename]) + header_filename + length_body
+
+                bytes_io = BytesIO(start_bytes + f.read(256 + 32 + real_len))
+                self.decompress_from_bytes(bytes_io)
+
+    def decompress_from_bytes(self, bytes_io: BytesIO) -> None:
+        with bytes_io as f:
             length_body = 0
             symbol = ""
             bit_string = ""
             decoded_str = ""
 
+            header_filename = f.read(int.from_bytes(f.read(1), "big"))
+
             for i in f.read(4):
                 length_body <<= 8
                 length_body += int(i)
+
             self.frequency = Counter({code: count for code, count in enumerate(f.read(256))})
             hash_data = f.read(32).decode('utf-8')
             self._create_tree()
             decodes = {value: key for key, value in self.codes.items()}
 
-            for byte in f.read(length_body):
+            for byte in f.read():
                 bit_string += format(byte, '08b')
 
             count = 0
@@ -78,7 +117,7 @@ class Huffman:
         if hash_data != md5(decoded_str.encode('utf-8')).hexdigest():
             print("The file is damaged")
             return
-        self._write_to_file(filename.removesuffix('.huf'), decoded_str.encode('utf-8'))
+        self.write_to_file(header_filename, decoded_str.encode('utf-8'))
 
     def _normalize_frequencies(self) -> None:
         max_item = self.frequency.most_common()[0][1]
@@ -122,3 +161,8 @@ class Huffman:
     def _read_bytes(self) -> bytes:
         with open(self.filename, 'rb') as f:
             return f.read()
+
+    @staticmethod
+    def _int_to_bytes(num: int):
+        len_bytes = f"{bin(num)[2:]:0>32}"
+        return bytearray(int(len_bytes[i:i + 8], 2) for i in range(0, len(len_bytes), 8))
