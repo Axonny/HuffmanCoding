@@ -2,16 +2,17 @@ import os
 import heapq
 from io import BytesIO
 from hashlib import md5
+from aes import AESCipher
 from huffman_tree import Node
 from collections import Counter
 
 
-def compress_folder(folder: str) -> None:
+def compress_folder(folder: str, password=None) -> None:
     data = bytearray()
     huffman = Huffman()
     for root, dirs, files in os.walk(folder):
         for f in files:
-            data += huffman.compress(os.path.join(root, f), False)
+            data += huffman.compress(os.path.join(root, f), False, password)
     huffman.write_to_file(folder.removesuffix('\\') + '.huf', data)
 
 
@@ -40,7 +41,7 @@ class Huffman:
         self.codes = {}
         self.root = None
 
-    def compress(self, filename: str, write_to_file=True) -> None | bytearray:
+    def compress(self, filename: str, write_to_file=True, password=None) -> None | bytearray:
         self.filename = filename
         data = self._read_bytes()
         hash_data = md5(data).hexdigest()
@@ -49,6 +50,9 @@ class Huffman:
         self._create_tree()
         compress_data = [self.codes[i] for i in list(data)]
         body = self._get_binary_body_from_string(''.join(compress_data))
+        if password is not None:
+            cipher = AESCipher(password)
+            body = cipher.encrypt(body)
         headers = self._create_headers(len(data), len(body), hash_data)
         if write_to_file:
             self.write_to_file(self.filename + '.huf', headers + body)
@@ -83,7 +87,7 @@ class Huffman:
 
         return bytearray(int(binary_string[i:i + 8], 2) for i in range(0, len(binary_string), 8))
 
-    def decompress(self, filename: str) -> None:
+    def decompress(self, filename: str, password=None) -> None:
         with open(filename, 'rb') as f:
             while byte := f.read(1):
                 len_filename = int.from_bytes(byte, "big")
@@ -97,9 +101,9 @@ class Huffman:
                 start_bytes = bytearray([len_filename]) + header_filename + length_body
 
                 bytes_io = BytesIO(start_bytes + f.read(256 + 32 + real_len))
-                self.decompress_from_bytes(bytes_io)
+                self.decompress_from_bytes(bytes_io, password)
 
-    def decompress_from_bytes(self, bytes_io: BytesIO) -> None:
+    def decompress_from_bytes(self, bytes_io: BytesIO, password=None) -> None:
         with bytes_io as f:
             length_body = 0
             symbol = ""
@@ -117,7 +121,14 @@ class Huffman:
             self._create_tree()
             decodes = {value: key for key, value in self.codes.items()}
 
-            for byte in f.read():
+            body = f.read()
+            if password is not None:
+                cipher = AESCipher(password)
+                body = cipher.decrypt(body)
+                if len(body) == 0:
+                    print("Incorrect password")
+                    return
+            for byte in body:
                 bit_string += format(byte, '08b')
 
             count = 0
@@ -129,8 +140,9 @@ class Huffman:
                     decoded_str += chr(decodes[symbol])
                     symbol = ""
                     count += 1
+
         if hash_data != md5(decoded_str.encode('utf-8')).hexdigest():
-            print("The file is damaged")
+            print("The file is damaged or incorrect password")
             return
         self.write_to_file(header_filename, decoded_str.encode('utf-8'))
 

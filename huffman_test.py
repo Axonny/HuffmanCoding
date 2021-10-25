@@ -37,6 +37,16 @@ class MyTestCase(unittest.TestCase):
         compress = os.path.getsize(self._test_path('comp.txt.huf'))
         self.assertTrue(compress * 1.1 < uncompress)
 
+    def test_password(self):
+        name = 'password.txt'
+        self._create_file_with_data(name, 'a' * 1000)
+        Huffman().compress(self._test_path(name), password='abcd')
+        os.rename(self._test_path(name), self._test_path("copy_" + name))
+        Huffman().decompress(self._test_path(f'{name}.huf'), password='incorrect password')
+        self.assertFalse(os.path.exists(self._test_path(name)))
+        Huffman().decompress(self._test_path(f'{name}.huf'), password='abcd')
+        self._is_correct_decompress(self._test_path(name), self._test_path("copy_" + name))
+
     def test_100_random(self):
         for _ in range(100):
             self._random_test()
